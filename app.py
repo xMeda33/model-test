@@ -10,7 +10,7 @@ import gc
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"*": {"origins": "*"}})
 
 def load_books_data(filepath):
     chunks = []
@@ -117,7 +117,9 @@ def upload_file():
 def recommend_content():
     book_id = int(request.args.get('book_id'))
     recommendations = get_content_recommendations(book_id)
-    return jsonify(recommendations.to_dict(orient='records'))
+    response =  jsonify(recommendations.to_dict(orient='records'))
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    return response
 
 @app.route('/recommend/collaborative', methods=['GET'])
 def recommend_collaborative():
@@ -127,9 +129,12 @@ def recommend_collaborative():
     user_ratings = ratings[ratings['user_id'] == user_id]
     recommendations = get_book_recommendations(user_id)
     if len(user_ratings) < 10:
-        return jsonify({"message":'This user has rated less than 10 books', "books":recommendations.to_dict(orient='records')})
-    
-    return jsonify(recommendations.to_dict(orient='records'))
+        response = jsonify({"message":'This user has rated less than 10 books', "books":recommendations.to_dict(orient='records')})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        return response
+    response = jsonify(recommendations.to_dict(orient='records'))
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    return response
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -13,6 +13,7 @@ app = Flask(__name__)
 final_books = pd.read_csv('./data/data.csv', on_bad_lines='skip', encoding='latin-1')
 
 # Combine features for content-based filtering
+final_books.rename(columns={'authors': 'author','categories':'genre','description':'desc','average_rating':'average_rating'}, inplace=True)
 final_books['combined_features'] = final_books['title'] + ' ' + final_books['genre'] + ' ' + final_books['author'].fillna('') + ' ' + final_books['desc']
 
 # Initialize CountVectorizer and TfidfTransformer

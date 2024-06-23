@@ -14,7 +14,10 @@ final_books = pd.read_csv('./data/data.csv', on_bad_lines='skip', encoding='lati
 
 # Combine features for content-based filtering
 final_books.rename(columns={'authors': 'author','categories':'genre','description':'desc','average_rating':'average_rating'}, inplace=True)
-final_books['combined_features'] = final_books['title'] + ' ' + final_books['genre'] + ' ' + final_books['author'].fillna('') + ' ' + final_books['desc']
+final_books['combined_features'] = (final_books['title'].fillna('') + ' ' +
+                                    final_books['genre'].fillna('') + ' ' +
+                                    final_books['author'].fillna('') + ' ' +
+                                    final_books['desc'].fillna(''))
 
 # Initialize CountVectorizer and TfidfTransformer
 count_vectorizer = CountVectorizer(stop_words='english', max_features=5000)

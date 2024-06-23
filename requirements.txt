@@ -6,3 +6,4 @@ seaborn==0.13.1
 numpy==1.25.2
 gunicorn==22.0.0
 Flask==2.2.5
+flask-cors==3.1.1

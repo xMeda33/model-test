@@ -7,8 +7,10 @@ from sklearn.metrics.pairwise import linear_kernel
 from surprise import Reader, Dataset, SVD
 from surprise.model_selection import train_test_split
 import gc
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 def load_books_data(filepath):
     chunks = []

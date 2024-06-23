@@ -119,7 +119,7 @@ def recommend_content():
 
 @app.route('/recommend/collaborative', methods=['GET'])
 def recommend_collaborative():
-    user_id = int(request.args.get('user_id'))
+    user_id = request.args.get('user_id')
     if model is None:
         return jsonify({"error": "Model not trained. Please upload the ratings file first."}), 400
     user_ratings = ratings[ratings['user_id'] == user_id]

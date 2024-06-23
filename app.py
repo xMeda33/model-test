@@ -123,9 +123,10 @@ def recommend_collaborative():
     if model is None:
         return jsonify({"error": "Model not trained. Please upload the ratings file first."}), 400
     user_ratings = ratings[ratings['user_id'] == user_id]
+    recommendations = get_book_recommendations(user_id)
     if len(user_ratings) < 10:
         return jsonify({"message":'This user has rated less than 10 books', "books":recommendations.to_dict(orient='records')})
-    recommendations = get_book_recommendations(user_id)
+    
     return jsonify(recommendations.to_dict(orient='records'))
 
 if __name__ == '__main__':

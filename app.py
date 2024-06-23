@@ -21,6 +21,7 @@ def load_books_data(filepath):
 final_books = load_books_data('./data/data.csv')
 
 # Combine features for content-based filtering, ensuring no NaN values
+final_books.rename(columns={'authors': 'author','categories':'genre','description':'desc','average_rating':'average_rating'}, inplace=True)
 final_books['combined_features'] = (final_books['title'].fillna('') + ' ' +
                                     final_books['genre'].fillna('') + ' ' +
                                     final_books['author'].fillna('') + ' ' +

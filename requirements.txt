@@ -1,9 +1,10 @@
 scikit-surprise==1.1.4
 pandas==2.0.3
 scikit-learn==1.2.2
-matplotlib==3.7.1
-seaborn==0.13.1
 numpy
 gunicorn==22.0.0
 Flask==2.2.5
 Flask-Cors
+kaggle
+lightfm
+os

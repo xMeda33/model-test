@@ -1,18 +1,18 @@
-#Ensemble API endpoint
-
 import pandas as pd
 import numpy as np
-import requests
 from flask import Flask, request, jsonify
-from lightfm import LightFM
-from lightfm.data import Dataset as LightFMDataset
-from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
-from sklearn.metrics.pairwise import linear_kernel
 import os
 from flask_cors import CORS
+from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Import TensorFlow and Keras
+import tensorflow as tf
+from tensorflow.keras.layers import Input, Embedding, Dot, Flatten, Concatenate, Dense
+from tensorflow.keras.models import Model
 
 # Initialize the Flask app
-app = Flask(_name_)
+app = Flask(__name__)
 CORS(app, resources={r"*": {"origins": "*"}})
 
 os.environ['KAGGLE_USERNAME'] = 'xmeda42069'
@@ -24,31 +24,13 @@ def download_kaggle_dataset(dataset_owner, dataset_name, download_path='data'):
     os.system(f'kaggle datasets download -d {dataset_owner}/{dataset_name} -p {download_path}')
     os.system(f'unzip -o {download_path}/{dataset_name}.zip -d {download_path}')
 
-
 # Load data
 download_kaggle_dataset('xmeda42069', 'books-grad-project-please-work')
 
 final_books = pd.read_csv('./data/70k_books.csv', encoding='latin-1', on_bad_lines='skip')
 ratings = pd.read_csv('./data/ratings.csv', encoding='latin-1', on_bad_lines='skip')
 
-# Prepare the data for LightFM
-lightfm_dataset = LightFMDataset()
-lightfm_dataset.fit((x for x in ratings['user_id'].unique()), (x for x in ratings['book_id'].unique()))
-
-# Build the interaction matrix
-(interactions, weights) = lightfm_dataset.build_interactions(((row['user_id'], row['book_id']) for _, row in ratings.iterrows()))
-
-# Initialize and train the LightFM model
-model = LightFM(loss='warp')
-model.fit(interactions, epochs=30, num_threads=2)
-
-# Create reverse mappings
-user_id_mapping = lightfm_dataset._user_id_mapping
-item_id_mapping = lightfm_dataset._item_id_mapping
-reverse_item_id_mapping = {v: k for k, v in item_id_mapping.items()}
-
-# Content-based filtering
-
+# Content-based filtering setup
 final_books['combined_features'] = (final_books['title'].fillna('') + ' ' +
                                     final_books['genre'].fillna('') + ' ' +
                                     final_books['author'].fillna('') + ' ' +
@@ -58,91 +40,98 @@ count_matrix = count_vectorizer.fit_transform(final_books['combined_features'])
 tfidf_transformer = TfidfTransformer()
 tfidf_matrix = tfidf_transformer.fit_transform(count_matrix)
 
+# Collaborative filtering using TensorFlow
+class CollaborativeFilteringModel:
+    def __init__(self, num_users, num_items, embedding_size=50):
+        self.num_users = num_users
+        self.num_items = num_items
+        self.embedding_size = embedding_size
+        self.build_model()
 
-@app.route('/fetch-ratings', methods=['POST'])
-def fetch_ratings():
-    data = request.json
-    
-    if not all(key in data for key in ['user_id', 'book_id', 'rating']):
-        return jsonify({"error": "Invalid request data. Required fields: user_id, book_id, rating"}), 400
-    
-    new_row = pd.DataFrame(data, index=[0])
-    
-    global ratings
-    ratings = pd.concat([ratings, new_row], ignore_index=True)
-    
-    # Write the updated ratings dataframe to the CSV file
-    ratings.to_csv('./data/ratings.csv', index=False, encoding='latin-1')
-    
-    return jsonify({"message": "Rating added successfully"}), 201
-def compute_cosine_similarity(tfidf_matrix, idx, top_n=10):
-    cosine_similarities = linear_kernel(tfidf_matrix[idx], tfidf_matrix).flatten()
-    similar_indices = cosine_similarities.argsort()[-top_n-1:-1][::-1]
-    similar_scores = cosine_similarities[similar_indices]
-    return similar_indices, similar_scores
+    def build_model(self):
+        # User and item input layers
+        user_input = Input(shape=(1,))
+        item_input = Input(shape=(1,))
 
+        # User and item embedding layers
+        user_embedding = Embedding(self.num_users, self.embedding_size)(user_input)
+        item_embedding = Embedding(self.num_items, self.embedding_size)(item_input)
+
+        # Flatten embeddings
+        user_flat = Flatten()(user_embedding)
+        item_flat = Flatten()(item_embedding)
+
+        # Dot product of user and item embeddings
+        prediction = Dot(axes=1)([user_flat, item_flat])
+
+        # Model creation
+        self.model = Model(inputs=[user_input, item_input], outputs=prediction)
+        self.model.compile(optimizer='adam', loss='mean_squared_error')
+
+    def train(self, X_train, y_train, epochs=10, batch_size=32):
+        self.model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=1)
+
+    def predict(self, user_ids, item_ids):
+        return self.model.predict([user_ids, item_ids])
+
+# Prepare data for collaborative filtering model
+user_ids = ratings['user_id'].unique()
+item_ids = ratings['book_id'].unique()
+num_users = len(user_ids)
+num_items = len(item_ids)
+
+# Mapping user and item IDs to sequential integers for model input
+user_id_to_index = {user_id: idx for idx, user_id in enumerate(user_ids)}
+item_id_to_index = {item_id: idx for idx, item_id in enumerate(item_ids)}
+
+ratings['user_index'] = ratings['user_id'].map(user_id_to_index)
+ratings['item_index'] = ratings['book_id'].map(item_id_to_index)
+
+X_train = [ratings['user_index'].values, ratings['item_index'].values]
+y_train = ratings['rating'].values
+
+# Initialize and train collaborative filtering model
+cf_model = CollaborativeFilteringModel(num_users, num_items, embedding_size=50)
+cf_model.train(X_train, y_train, epochs=10, batch_size=32)
+
+# Define functions for recommendations
 def get_content_recommendations(book_id, top_n=10):
     idx = final_books[final_books['book_id'] == book_id].index[0]
-    similar_indices = compute_cosine_similarity(tfidf_matrix, idx, top_n)
+    cosine_similarities = cosine_similarity(tfidf_matrix[idx:idx+1], tfidf_matrix).flatten()
+    similar_indices = cosine_similarities.argsort()[-top_n-1:-1][::-1]
     return final_books.iloc[similar_indices][['book_id', 'isbn13']]
 
-
-def get_user_recommendations(user_id, ratings_df, books_df, tfidf_matrix, rating_threshold=3.5, top_n=10):
-    user_rated_books = ratings_df[(ratings_df['user_id'] == user_id) & (ratings_df['rating'] > rating_threshold)]
-    if user_rated_books.empty:
-        top_rated_books = books_df.nlargest(10000, 'rating').sample(n=top_n, random_state=42)
-        return top_rated_books[['book_id', 'isbn']]
+def get_collaborative_recommendations(user_id, ratings_df, books_df, top_n=10):
+    user_index = user_id_to_index.get(user_id)
+    if user_index is None:
+        return pd.DataFrame(columns=['book_id', 'isbn'])  # User not found
     
-    all_similar_books = []
-    for _, row in user_rated_books.iterrows():
-        book_id = row['book_id']
-        idx = books_df[books_df['book_id'] == book_id].index[0]
-        similar_indices, similar_scores = compute_cosine_similarity(tfidf_matrix, idx, top_n)
-        for i in range(len(similar_indices)):
-            all_similar_books.append((similar_indices[i], similar_scores[i]))
-    
-    similar_books_scores = {}
-    for idx, score in all_similar_books:
-        if idx in similar_books_scores:
-            similar_books_scores[idx] += score
-        else:
-            similar_books_scores[idx] = score
+    user_ids = np.array([user_index] * len(item_ids))
+    item_ids = np.array(list(item_id_to_index.values()))
+    predictions = cf_model.predict(user_ids, item_ids)
+    top_indices = np.argsort(-predictions.flatten())[:top_n]
+    top_book_ids = [item_ids[idx] for idx in top_indices]
+    return books_df[books_df['book_id'].isin(top_book_ids)][['book_id', 'isbn']]
 
-    sorted_similar_books = sorted(similar_books_scores.items(), key=lambda x: x[1], reverse=True)
-    recommended_indices = [idx for idx, score in sorted_similar_books[:top_n]]
-    return books_df.iloc[recommended_indices][['book_id', 'isbn']]
+def get_ensemble_recommendations(user_id, ratings_df, books_df, top_n=10):
+    content_recommendations = get_content_recommendations(user_id, top_n=top_n)
+    collaborative_recommendations = get_collaborative_recommendations(user_id, ratings_df, books_df, top_n=top_n)
+    ensemble_recommendations = pd.concat([content_recommendations, collaborative_recommendations])
+    ensemble_recommendations = ensemble_recommendations.drop_duplicates(subset=['book_id'])
+    return ensemble_recommendations[['book_id', 'isbn']]
 
-def get_top_n_item_recommendations(user_id, model, books_df, lightfm_dataset, n=5):
-    user_id_internal = user_id_mapping[user_id]
-    scores = model.predict(user_id_internal, np.arange(lightfm_dataset.interactions_shape()[1]))
-    top_n_item_ids = np.argsort(-scores)[:n]
-    top_n_books = [reverse_item_id_mapping[item_id] for item_id in top_n_item_ids]
-    top_n_books_df = books_df[books_df['book_id'].isin(top_n_books)]
-    return top_n_books_df[['book_id', 'isbn']]
-
-def get_ensemble_recommendations(user_id, model, ratings_df, books_df, tfidf_matrix, top_n=10, weight_content=0.6, weight_collaborative=0.4):
-    cf_recommendations = get_top_n_item_recommendations(user_id, model, books_df, lightfm_dataset, n=top_n)
-    cb_recommendations = get_user_recommendations(user_id, ratings_df, books_df, tfidf_matrix, top_n=top_n)
-    cf_recommendations['score'] = weight_collaborative
-    cb_recommendations['score'] = weight_content
-    all_recommendations = pd.concat([cf_recommendations, cb_recommendations])
-    all_recommendations = all_recommendations.groupby('book_id').agg({'score': 'sum'}).reset_index()
-    recommended_indices = all_recommendations.nlargest(top_n, 'score')['book_id']
-    return books_df[books_df['book_id'].isin(recommended_indices)][['book_id', 'isbn']]
-
+# Flask API endpoints
 @app.route('/recommend/content', methods=['GET'])
 def recommend_content():
     book_id = int(request.args.get('book_id'))
     recommendations = get_content_recommendations(book_id)
-    response =  jsonify(recommendations.to_dict(orient='records'))
-    response.headers.add("Access-Control-Allow-Origin", "*")
-    return response
+    return jsonify(recommendations.to_dict(orient='records'))
 
 @app.route('/recommend', methods=['GET'])
 def recommend():
     user_id = int(request.args.get('user_id'))
-    recommendations = get_ensemble_recommendations(user_id, model, ratings, final_books, tfidf_matrix)
+    recommendations = get_ensemble_recommendations(user_id, ratings, final_books)
     return jsonify(recommendations.to_dict(orient='records'))
 
-if _name_ == '_main_':
+if __name__ == '__main__':
     app.run(debug=True)
